@@ -144,3 +144,5 @@ this.Functions = this.Functions||{};
   	}
   }
 })();
+
+export default Functions;
