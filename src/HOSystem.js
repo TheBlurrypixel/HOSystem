@@ -1,5 +1,50 @@
 import Functions from "./Functions.js"
 
+// BEGIN QUICK SORT FUNCTIONS
+function swap(inArray, i, j)
+{
+	var temp = inArray[i];
+	inArray[i] = inArray[j];
+	inArray[j] = temp;
+}
+
+function partition(inArray, lo, hi, test)
+{
+	var pivot = inArray[lo];
+    var i = lo - 1;
+	var j = hi + 1;
+
+	do
+	{
+		do
+		{
+			i++;
+		} while(test(inArray[i], pivot));
+
+		do
+		{
+			j--;
+		} while(test(pivot, inArray[j]));
+
+		if(i >= j)
+			return j;
+
+		swap(inArray, i, j);
+
+	} while(true);
+}
+
+function quicksort(inArray, lo, hi, test)
+{
+    if (lo < hi)
+    {
+		var p = partition(inArray, lo, hi, test);
+        quicksort(inArray, lo, p, test);   // sort first section
+        quicksort(inArray, p+1, hi, test);    // sort second section
+	}
+}
+// END QUICK SORT FUNCTIONS
+
 export class particleHO extends createjs.Container {
 	constructor (inStartPoint, inEndPoint, inNumberOfFrames, inScaleFactor) {
 		// constructor for particleHO
@@ -243,6 +288,8 @@ export class HOAnimation extends createjs.MovieClip {
 					inEndPoint,
 					inEvent,
 					inCallback,
+					inSelectEvent,
+					inSelectCallback,
 					inAnimationOptions,
 					inParticleSystemHORefs,
 					inPuffsRefs
@@ -250,6 +297,12 @@ export class HOAnimation extends createjs.MovieClip {
 		super();
 
 		this.fObject = inMovieClip ? inMovieClip : new createjs.MovieClip();
+
+		this.defaultParent = this.fObject.parent;
+		this.defaultIndex = this.fObject.parent.getChildIndex(this.fObject);
+		this.defaultX = this.fObject.x;
+		this.defaultY = this.fObject.y;
+
 		this.puffsRefs = inPuffsRefs;
 		this.particleSystemHORefs = inParticleSystemHORefs;
 
@@ -335,6 +388,9 @@ export class HOAnimation extends createjs.MovieClip {
 
 		this.fEvent = inEvent ? inEvent : "click";
 		this.fCallback = inCallback ? inCallback : e => e.currentTarget.play();
+
+		this.fSelectEvent = inSelectEvent ? inSelectEvent : "click";
+		this.fSelectCallback = inSelectCallback ? inSelectCallback : null;
 	}
 
 	init()
@@ -349,13 +405,14 @@ export class HOAnimation extends createjs.MovieClip {
 		this.fObject.setTransform();
 
 		this.fObject.visible = true;
-		this.visible = true;
+		this.fObject.gotoAndStop();
 
 		this.hitArea = this.fObject;
 		this.mouseEnabled = true;
 	//	this.cursor = "pointer";
 
-		this.addEventListener(this.fEvent, this.fCallback);
+		if(this.fCallback) this.addEventListener(this.fEvent, this.fCallback);
+		if(this.fSelectCallback) this.addEventListener(this.fSelectEvent, this.fSelectCallback);
 	}
 
 	// overriding the play() method!
@@ -579,13 +636,23 @@ export class HOAnimationSystem {
 								inEndPoint,
 								e,
 								callback,
-								inAnimationOptions
+								inAnimationOptions,
+								selectEvent,
+								selectCallback,
+								resetCallback
 							) {
 		this.fAnimationOptions = inAnimationOptions;
 
 		this.fCallback = callback;
 		this.fEvent = e;
 		this.endPoint = inEndPoint;
+
+		this.fSelectEvent = selectEvent;
+		this.fSelectCallback = selectCallback;
+		this.fResetCallback = resetCallback ? resetCallback : (e) => {
+			e.visible = true;
+			e.gotoAndStop(0);
+		};
 
 		// This array holds our HOAnimations
 		this.HOAnimationsArray = new Array();
@@ -594,20 +661,28 @@ export class HOAnimationSystem {
 		this.puffsRefs = new Array();
 
 		// make sure what we passed in are all MovieClips
-		for(var i=0; i < inObjects.length; i++)
-		{
+		for(let i=0; i < inObjects.length; i++)
+		{		// in case the HO instance is not on the stage -- SHOULD NEVER HAPPEN
+			if(!inObjects[i] || !inObjects[i].parent) continue;
+
 			var resHOA = new HOAnimation(
 																		inObjects[i],
 																		this.endPoint,
 																		this.fEvent,
 																		this.fCallback,
+																		this.fSelectEvent,
+																		this.fSelectCallback,
 																		this.fAnimationOptions,
 																		this.particleSystemHORefs,
 																		this.puffsRefs
 																	);
 
+			if(this.fResetCallback) this.fResetCallback(resHOA.fObject);
 			this.HOAnimationsArray.push(resHOA);
 		}
+
+		// sort the array by index lowest first
+		quicksort(this.HOAnimationsArray, 0, this.HOAnimationsArray.length-1, (itemA, itemB) => {itemA.defaultIndex < itemB.defaultIndex} );
 
 		// we need to wait a tick before initializing
 		// dunno why but the removed and added MovieClips are invisible otherwise
@@ -616,22 +691,29 @@ export class HOAnimationSystem {
 		this.timeToCheckTicks = createjs.Ticker.getTicks(false);
 	}
 
-	clearFromStage() {
-		for(var i=0; i < this.particleSystemHORefs.length; i++)
-			if(this.particleSystemHORefs[i].parent != null) this.particleSystemHORefs[i].parent.removeChild(this.particleSystemHORefs[i]);
+	remove() {
+		this.particleSystemHORefs.forEach( (item) => {
+			if(item.parent != null) item.parent.removeChild(item);
+		});
 
-		for(var i=0; i < this.puffsRefs.length; i++)
-			if(this.puffsRefs[i].parent != null) this.puffsRefs[i].parent.removeChild(this.puffsRefs[i]);
+		this.puffsRefs.forEach( (item) => {
+			if(item.parent != null) item.parent.removeChild(item);
+		});
 
-		for(var i=0; i < this.HOAnimationsArray.length; i++)
-			if(this.HOAnimationsArray[i].parent != null) this.HOAnimationsArray[i].parent.removeChild(this.HOAnimationsArray[i]);
+		this.HOAnimationsArray.forEach( (item) => {
+			if(this.fResetCallback) this.fResetCallback(item.fObject);
+			if(item.fObject.parent) item.fObject.parent.removeChild(item.fObject);
+			item.defaultParent.addChildAt(item.fObject, item.defaultIndex);
+			item.fObject.setTransform(item.defaultX, item.defaultY);
+			if(item.parent) item.parent.removeChild(item);
+		});
 	}
 
 	startAnimation(e)
 	{
 		if(createjs.Ticker.getTicks(false) > this.timeToCheckTicks)
 		{
-			for(var i=0; i < this.HOAnimationsArray.length; i++)
+			for(let i=0; i < this.HOAnimationsArray.length; i++)
 			{
 				if(this.HOAnimationsArray[i].children)
 					this.HOAnimationsArray[i].init();
