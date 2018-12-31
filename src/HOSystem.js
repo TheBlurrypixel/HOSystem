@@ -1,3 +1,5 @@
+import Functions from "./Functions.js"
+
 export class particleHO extends createjs.Container {
 	constructor (inStartPoint, inEndPoint, inNumberOfFrames, inScaleFactor) {
 		// constructor for particleHO
