@@ -286,10 +286,8 @@ export class HOAnimation extends createjs.MovieClip {
 	constructor(
 					inMovieClip,
 					inEndPoint,
-					inEvent,
-					inCallback,
-					inSelectEvent,
-					inSelectCallback,
+					// inEvent,
+					inResetCallback,
 					inAnimationOptions,
 					inParticleSystemHORefs,
 					inPuffsRefs
@@ -297,6 +295,7 @@ export class HOAnimation extends createjs.MovieClip {
 		super();
 
 		this.fObject = inMovieClip ? inMovieClip : new createjs.MovieClip();
+		this.fResetCallback = inResetCallback ? inResetCallback : () => {} ;
 
 		this.defaultParent = this.fObject.parent;
 		this.defaultIndex = this.fObject.parent.getChildIndex(this.fObject);
@@ -386,11 +385,8 @@ export class HOAnimation extends createjs.MovieClip {
 		//this.gotoAndStop(0);
 		this.name = inMovieClip.getName() + "HOA";
 
-		this.fEvent = inEvent ? inEvent : "click";
-		this.fCallback = inCallback ? inCallback : e => e.currentTarget.play();
-
-		this.fSelectEvent = inSelectEvent ? inSelectEvent : "click";
-		this.fSelectCallback = inSelectCallback ? inSelectCallback : null;
+		// this.fEvent = inEvent ? inEvent : "click";
+		// this.fCallback = inCallback ? inCallback : e => e.currentTarget.play();
 	}
 
 	init()
@@ -404,15 +400,15 @@ export class HOAnimation extends createjs.MovieClip {
 		this.addChild(this.fObject);
 		this.fObject.setTransform();
 
-		this.fObject.visible = true;
-		this.fObject.gotoAndStop();
+		this.visible = true;
+		this.gotoAndStop();
 
 		this.hitArea = this.fObject;
 		this.mouseEnabled = true;
 	//	this.cursor = "pointer";
 
-		if(this.fCallback) this.addEventListener(this.fEvent, this.fCallback);
-		if(this.fSelectCallback) this.addEventListener(this.fSelectEvent, this.fSelectCallback);
+		this.fResetCallback(this);
+		// if(this.fCallback) this.addEventListener(this.fEvent, this.fCallback);
 	}
 
 	// overriding the play() method!
@@ -431,6 +427,10 @@ export class HOAnimation extends createjs.MovieClip {
 
 			this.addEventListener("tick", this.pulseScaleBound);
 		}
+	}
+
+	gotoAndStop() {
+		this.fObject.gotoAndStop(0);
 	}
 
 	go()
@@ -519,6 +519,7 @@ export class HOAnimation extends createjs.MovieClip {
 		{
 			e.target.removeEventListener("tick", this.updateParticleSystemBound);
 			e.target.parent.removeChild(e.target);
+			this.dispatchEvent("particleSystemRemove");
 		}
 		else
 			e.target.run();
@@ -532,6 +533,7 @@ export class HOAnimation extends createjs.MovieClip {
 			event.target.gotoAndStop(0);
 			event.target.removeEventListener("tick", this.onMCCompleteBound);
 			event.target.parent.removeChild(event.target);
+			this.dispatchEvent("puffsRemove");
 		}
 	}
 
@@ -564,9 +566,11 @@ export class HOAnimation extends createjs.MovieClip {
 		{
 			this.removeEventListener("tick", this.playLoopBound);
 
-			this.fObject.visible = false;
+			this.visible = false;
 			this.removeChild(this.fObject);
 			this.parent.removeChild(this);
+
+			this.dispatchEvent("complete");
 		}
 	}
 
@@ -634,24 +638,26 @@ export class HOAnimationSystem {
 	constructor(
 								inObjects,
 								inEndPoint,
-								e,
-								callback,
-								inAnimationOptions,
-								selectEvent,
-								selectCallback,
-								resetCallback
+								// e,
+								// callback,
+								resetCallback,
+								inAnimationOptions
 							) {
 		this.fAnimationOptions = inAnimationOptions;
 
-		this.fCallback = callback;
-		this.fEvent = e;
+		// this.fCallback = callback;
+		// this.fEvent = e;
 		this.endPoint = inEndPoint;
 
-		this.fSelectEvent = selectEvent;
-		this.fSelectCallback = selectCallback;
 		this.fResetCallback = resetCallback ? resetCallback : (e) => {
 			e.visible = true;
-			e.gotoAndStop(0);
+			e.gotoAndStop();
+			e.removeAllEventListeners();
+			e.addEventListener("click", function cb(ev) {
+				ev.target.play();
+				// console.log(ev.target.fObject.getName());
+				ev.target.removeEventListener("click", cb);
+			});
 		};
 
 		// This array holds our HOAnimations
@@ -668,16 +674,13 @@ export class HOAnimationSystem {
 			var resHOA = new HOAnimation(
 																		inObjects[i],
 																		this.endPoint,
-																		this.fEvent,
-																		this.fCallback,
-																		this.fSelectEvent,
-																		this.fSelectCallback,
+																		// this.fEvent,
+																		this.fResetCallback,
 																		this.fAnimationOptions,
 																		this.particleSystemHORefs,
 																		this.puffsRefs
 																	);
 
-			if(this.fResetCallback) this.fResetCallback(resHOA.fObject);
 			this.HOAnimationsArray.push(resHOA);
 		}
 
@@ -701,7 +704,7 @@ export class HOAnimationSystem {
 		});
 
 		this.HOAnimationsArray.forEach( (item) => {
-			if(this.fResetCallback) this.fResetCallback(item.fObject);
+			if(item.fResetCallback) item.fResetCallback(item);
 			if(item.fObject.parent) item.fObject.parent.removeChild(item.fObject);
 			item.defaultParent.addChildAt(item.fObject, item.defaultIndex);
 			item.fObject.setTransform(item.defaultX, item.defaultY);
@@ -713,13 +716,12 @@ export class HOAnimationSystem {
 	{
 		if(createjs.Ticker.getTicks(false) > this.timeToCheckTicks)
 		{
-			for(let i=0; i < this.HOAnimationsArray.length; i++)
-			{
-				if(this.HOAnimationsArray[i].children)
-					this.HOAnimationsArray[i].init();
+			this.HOAnimationsArray.forEach( (item) => {
+				if(item.children)
+					item.init();
 				else
-					console.log(this.HOAnimationsArray[i].name + " children undefined");
-			}
+					console.log("HOAnimation children undefined");
+			});
 			createjs.Ticker.removeEventListener("tick", this.startAnimationBound);
 			stage.update();
 		}
